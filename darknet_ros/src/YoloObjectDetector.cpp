@@ -26,7 +26,7 @@ char* data;
 char** detectionNames;
 
 YoloObjectDetector::YoloObjectDetector(ros::NodeHandle nh)
-    : nodeHandle_(nh), imageTransport_(nodeHandle_), numClasses_(0), classLabels_(0), rosBoxes_(0), rosBoxCounter_(0) {
+    : nodeHandle_(nh), numClasses_(0), classLabels_(0), rosBoxes_(0), rosBoxCounter_(0) {
   ROS_INFO("[YoloObjectDetector] Node started.");
 
   // Read parameters from config file.
@@ -139,7 +139,7 @@ void YoloObjectDetector::init() {
   nodeHandle_.param("publishers/detection_image/queue_size", detectionImageQueueSize, 1);
   nodeHandle_.param("publishers/detection_image/latch", detectionImageLatch, true);
 
-  imageSubscriber_ = imageTransport_.subscribe(cameraTopicName, cameraQueueSize, &YoloObjectDetector::cameraCallback, this);
+  imageSubscriber_ = nodeHandle_.subscribe(cameraTopicName, cameraQueueSize, &YoloObjectDetector::cameraCallback, this);
   objectPublisher_ =
       nodeHandle_.advertise<darknet_ros_msgs::ObjectCount>(objectDetectorTopicName, objectDetectorQueueSize, objectDetectorLatch);
   boundingBoxesPublisher_ =
@@ -156,24 +156,13 @@ void YoloObjectDetector::init() {
   checkForObjectsActionServer_->start();
 }
 
-void YoloObjectDetector::cameraCallback(const sensor_msgs::ImageConstPtr& msg) {
+void YoloObjectDetector::cameraCallback(const sensor_msgs::CompressedImageConstPtr& msg) {
   ROS_DEBUG("[YoloObjectDetector] USB image received.");
 
   cv_bridge::CvImagePtr cam_image;
 
   try {
-    if (msg->encoding == "mono8" || msg->encoding == "bgr8" || msg->encoding == "rgb8") {
-      cam_image = cv_bridge::toCvCopy(msg, msg->encoding);
-    } else if ( msg->encoding == "bgra8") {
-      cam_image = cv_bridge::toCvCopy(msg, "bgr8");
-    } else if ( msg->encoding == "rgba8") {
-      cam_image = cv_bridge::toCvCopy(msg, "rgb8");
-    } else if ( msg->encoding == "mono16") {
-      ROS_WARN_ONCE("Converting mono16 images to mono8");
-      cam_image = cv_bridge::toCvCopy(msg, "mono8");
-    } else {
-      ROS_ERROR("Image message encoding provided is not mono8, mono16, bgr8, bgra8, rgb8 or rgba8.");
-    }
+    cam_image = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
   } catch (cv_bridge::Exception& e) {
     ROS_ERROR("cv_bridge exception: %s", e.what());
     return;
@@ -380,7 +369,6 @@ void* YoloObjectDetector::fetchInThread() {
   {
     boost::shared_lock<boost::shared_mutex> lock(mutexImageCallback_);
     CvMatWithHeader_ imageAndHeader = getCvMatWithHeader();
-    free_image(buff_[buffIndex_]);
     buff_[buffIndex_] = mat_to_image(imageAndHeader.image);
     headerBuff_[buffIndex_] = imageAndHeader.header;
     buffId_[buffIndex_] = actionId_;
